@@ -37,7 +37,7 @@ def get_links(url):
                     and link['href'] not in no_link:
                 wlinks.append(link['href'])
         except:
-            pass 
+            pass
     return wlinks
 
 def draw_graph(start_nodes=['/wiki/Alex_Jones','/wiki/James_H._Fetzer']):
@@ -45,9 +45,9 @@ def draw_graph(start_nodes=['/wiki/Alex_Jones','/wiki/James_H._Fetzer']):
     linkset = set(start_nodes+all_links[0]+all_links[1])
     link2id = dict(zip(linkset,range(len(linkset))))
     id2link = dict(zip(link2id.values(), link2id.keys()))
-    
+
     all_edges = [e for i in range(len(start_nodes)) for e in list(map(lambda x:(link2id[start_nodes[i]],link2id[x]),set(all_links[i])))]
-    
+
     G = nx.Graph()
     G.add_nodes_from(id2link.keys())
     G.add_edges_from(all_edges)
@@ -55,7 +55,7 @@ def draw_graph(start_nodes=['/wiki/Alex_Jones','/wiki/James_H._Fetzer']):
     plt.show()
     print('done')
 
-    
+
 # url = 'https://en.wikipedia.org/wiki/Web_scraping'
 # print(get_links(url))
 # print()
@@ -92,15 +92,16 @@ def get_references(url):
                     print(soup.find(id='bodyContent').find_all(children[0].text))
                     print('------------------------------------------------------------------')
                 else:
-                    print(children[0])
-                    print(children[0].text)
-                    print(soup.find_all(children[0]))
-                    break
+                    pass
+                    # print(children[0])
+                    # print(children[0].text)
+                    # print(soup.find_all(children[0]))
+                    # break
                 # print('------------------------------------------------------------------')
-                wlinks.append(link['href'])
+                # wlinks.append(link['href'].children[0].text)
+                wlinks.append(children[0].text)
         except:
-            pass 
-    exit()
+            pass
     return wlinks
 
 def tag_visible(element):
@@ -129,9 +130,22 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
 
     # print(get_references(url))
-    print(get_window(text_from_html(url),'From'))
-    print(get_window(text_from_html(url),'Austin',60))
-    print(get_window(text_from_html(url),'Sandy',120))
+    # print(get_window(text_from_html(url),'From'))
+    # print(get_window(text_from_html(url),'Austin',60))
+    # print(get_window(text_from_html(url),'Sandy',120))
+    print('/wiki/James_H._Fetzer' in get_links(url))
+    print('/wiki/Alex_Jones' in get_links(url))
+
+    print('/wiki/James_H._Fetzer' in get_links('https://en.wikipedia.org/wiki/James_H._Fetzer'))
+    print('/wiki/Alex_Jones' in get_links('https://en.wikipedia.org/wiki/James_H._Fetzer'))
+    exit()
+    print('From',url,':')
+    print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
+    print()
+
+    url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
+    print('From',url,':')
+    print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # draw_graph()
 
 if __name__=='__main__':main()
