@@ -1,13 +1,12 @@
+import re
 import requests
+
 from bs4 import BeautifulSoup
+from bs4.element import Comment
 
 import networkx as nx
 import matplotlib.pyplot as plt
 
-test_urls = [
-    'https://en.wikipedia.org/wiki/Alex_Jones',
-    'https://en.wikipedia.org/wiki/James_H._Fetzer',
-]
 
 no_link = [
     '/wiki/ISSN_(identifier)',
@@ -104,27 +103,36 @@ def get_references(url):
     exit()
     return wlinks
 
+def tag_visible(element):
+    if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
+        return False
+    if isinstance(element, Comment):
+        return False
+    return True
+
+def text_from_html(url):
+    soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+    texts = soup.find_all(text=True)
+    visible_texts = filter(tag_visible, texts)
+    return ' '.join(t.strip() for t in visible_texts if t not in ['','\n','\t'])
+
+def get_window(doc, ref, window_size=30):
+    search = re.search(r'\b('+ref+r')\b', doc)
+    if search:
+        return doc[max(search.start()-window_size,0):(search.end()+window_size)]
+    return ''
+
 def main():
+    # TEST URLS
+    # url = 'https://en.wikipedia.org/wiki/Web_scraping'
+    url = 'https://en.wikipedia.org/wiki/Alex_Jones'
+    # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
 
-    from bs4.element import Comment
-
-    def tag_visible(element):
-        if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
-            return False
-        if isinstance(element, Comment):
-            return False
-        return True
-    
-    
-    def text_from_html(url):
-        soup = BeautifulSoup(requests.get(url).content, 'html.parser')
-        texts = soup.find_all(text=True)
-        visible_texts = filter(tag_visible, texts)
-        return u" ".join(t.strip() for t in visible_texts)
-
-    print(text_from_html('https://en.wikipedia.org/wiki/Web_scraping'))
+    # print(get_references(url))
+    print(get_window(text_from_html(url),'From'))
+    print(get_window(text_from_html(url),'Austin',60))
+    print(get_window(text_from_html(url),'Sandy',120))
     # draw_graph()
-    # print(get_references('https://en.wikipedia.org/wiki/Web_scraping'))
 
 if __name__=='__main__':main()
 
