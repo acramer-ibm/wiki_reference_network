@@ -7,8 +7,25 @@ from bs4.element import Comment
 import networkx as nx
 import matplotlib.pyplot as plt
 
+from random import choice as random_choice, choices as random_choices
+
+from tqdm import tqdm
 
 no_link = [
+    #TODO: '/wiki/Doi_(identifier)'
+    #TODO: '/wiki/ISBN_(identifier)'
+    #TODO: '/wiki/SUDOC_(identifier)'
+    #TODO: '/wiki/OCLC_(identifier)'
+    #JSTOR
+    #MBA
+    #Trove
+    '/wiki/JSTOR_(identifier)',
+    '/wiki/MBA_(identifier)',
+    '/wiki/Trove_(identifier)',
+    '/wiki/Doi_(identifier)',
+    '/wiki/ISBN_(identifier)',
+    '/wiki/SUDOC_(identifier)',
+    '/wiki/OCLC_(identifier)',
     '/wiki/ISSN_(identifier)',
     '/wiki/ISNI_(identifier)',
     '/wiki/VIAF_(identifier)',
@@ -24,6 +41,9 @@ no_link = [
     '/wiki/Category:Articles_with_limited_geographic_scope_from_October_2015',
     '/wiki/Category:United_States-centric',
 ]
+
+def wiki_get_links(url):
+    return get_links('https://en.wikipedia.org'+url)
 
 def get_links(url):
     soup = BeautifulSoup(requests.get(url).content, 'html.parser')
@@ -41,10 +61,13 @@ def get_links(url):
     return wlinks
 
 def draw_graph(start_nodes=['/wiki/Alex_Jones','/wiki/James_H._Fetzer']):
-    all_links = list(map(lambda x:get_links('https://en.wikipedia.org'+x),start_nodes))
+    all_links = list(map(wiki_get_links,start_nodes))
     linkset = set(start_nodes+all_links[0]+all_links[1])
+    # linkset = set(start_nodes+[l for ls in all_links for l in ls])
     link2id = dict(zip(linkset,range(len(linkset))))
     id2link = dict(zip(link2id.values(), link2id.keys()))
+    # id2link = list(linkset)
+    # link2id = dict(zip(id2link,range(len(id2link))))
 
     all_edges = [e for i in range(len(start_nodes)) for e in list(map(lambda x:(link2id[start_nodes[i]],link2id[x]),set(all_links[i])))]
 
@@ -123,27 +146,131 @@ def get_window(doc, ref, window_size=30):
         return doc[max(search.start()-window_size,0):(search.end()+window_size)]
     return ''
 
+
+def generate_graph(url,n=5,max_iter=5,max_pc=1000):
+    central_nodes = set()
+    node_counts = [0]
+    edges = set()
+    link2id = {url:0}
+    id2link = [url]
+
+    # for _ in range(n):
+    #     print(''.join(['-']*50))
+    #     central_nodes.add(link2id[url])
+    #     print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
+    #     links = set(wiki_get_links(url))
+    #     print('Num Links:',len(links))
+    #     for l in links:
+    #         if l not in id2link:
+    #             link2id[l] = len(id2link)
+    #             id2link.append(l)
+    #             node_counts.append(0)
+    #         if url != l:
+    #             node_counts[link2id[l]] += 1
+    #             edges.add(frozenset({link2id[url],link2id[l]}))
+
+    #     # new_nodes = list(set(links).difference(central_nodes))
+    #     new_nodes = list(set(links).difference(map(lambda x:id2link[x],central_nodes)))
+    #     print('Num new links:',len(new_nodes))
+    #     print('Node Counts:',len(node_counts))
+    #     url = random_choice(new_nodes)
+
+    print(''.join(['-']*50))
+    central_nodes.add(link2id[url])
+    print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
+    links = set(wiki_get_links(url))
+    print('Num Links:',len(links))
+    for l in links:
+        if l not in id2link:
+            link2id[l] = len(id2link)
+            id2link.append(l)
+            node_counts.append(0)
+        if url != l:
+            node_counts[link2id[l]] += 1
+            edges.add(frozenset({link2id[url],link2id[l]}))
+
+    new_nodes = list(set(links).difference(map(lambda x:id2link[x],central_nodes)))
+    print('Num new links:',len(new_nodes))
+    print('Node Counts:',len(node_counts))
+
+    for url in random_choices(new_nodes,k=(n-1)):
+        print(''.join(['-']*50))
+        central_nodes.add(link2id[url])
+        print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
+        links = set(wiki_get_links(url))
+        print('Num Links:',len(links))
+        for l in links:
+            if l not in id2link:
+                link2id[l] = len(id2link)
+                id2link.append(l)
+                node_counts.append(0)
+            if url != l:
+                node_counts[link2id[l]] += 1
+                edges.add(frozenset({link2id[url],link2id[l]}))
+
+    print()
+    print()
+        
+    for _ in range(max_iter):
+        precentral = list(map(lambda y:y[0],
+                       filter(lambda x:x[1]>1 and x[0] not in central_nodes,
+                       enumerate(node_counts))))[:max_pc]
+        print(''.join(['-']*50))
+        print('Precentral:',len(precentral))
+        if not precentral: break
+
+        pbar = tqdm(total=len(precentral))
+
+        for lid in precentral:
+            url = id2link[lid]
+            central_nodes.add(lid)
+            links = set(wiki_get_links(url))
+            for l in links:
+                if l in id2link and url != l:
+                    node_counts[link2id[l]] += 1
+                    edges.add(frozenset({link2id[url],link2id[l]}))
+            pbar.update(1)
+    in_edges = set(filter(lambda x:not x-central_nodes,edges))
+
+    G = nx.Graph()
+    G.add_nodes_from(central_nodes)
+    G.add_edges_from(in_edges)
+    print(*list(map(lambda n:'{:04d} - {}'.format(n,id2link[n]),sorted(G.nodes))),sep='\n')
+    # nx.draw(G,labels=dict(map(lambda x:(x,id2link[x][6:]),central_nodes)),with_labels=True)
+    nx.draw(G,with_labels=True)
+    plt.show()
+    return G
+
 def main():
+
+    # url = 'https://en.wikipedia.org/wiki/World_War_I'
+    # soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+    # print(list(map(lambda x:x['href'],filter(lambda x:x['href'] == 'https://en.wikipedia.org/wiki/World_War_I',soup.find(id='bodyContent').find_all('link')))))
+    # # soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+    # # print(list(map(lambda x:x['href'],filter(lambda x:x['rel'] == 'canonical',soup.find(id='bodyContent').find_all('link')))))
+    # # print(url)
+    # 
+    # url = 'https://en.wikipedia.org/wiki/First_World_War'
+    # soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+    # print(list(map(lambda x:x['href'],filter(lambda x:x['href'] == 'https://en.wikipedia.org/wiki/World_War_I',soup.find(id='bodyContent').find_all('link')))))
+    # exit()
+
+    # soup = BeautifulSoup(.content, 'html.parser')
+    # print()
+
     # TEST URLS
     # url = 'https://en.wikipedia.org/wiki/Web_scraping'
-    url = 'https://en.wikipedia.org/wiki/Alex_Jones'
+    # url = 'https://en.wikipedia.org/wiki/Alex_Jones'
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
 
+    print()
+    # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
+    print(generate_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20))
+    # print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # print(get_references(url))
     # print(get_window(text_from_html(url),'From'))
     # print(get_window(text_from_html(url),'Austin',60))
     # print(get_window(text_from_html(url),'Sandy',120))
-    print()
-    print()
-    print()
-    print('From',url,':')
-    print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
-    print()
 
-    url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
-    print('From',url,':')
-    print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
-    # draw_graph()
-
-if __name__=='__main__':main()
+if __name__=='__main__' : main()
 
