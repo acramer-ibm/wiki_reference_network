@@ -7,19 +7,9 @@ from bs4.element import Comment
 from edge_classifier import EdgeClassifier
 
 import networkx as nx
-# # import nxneo4j as nx
-# 
-# from neo4j import GraphDatabase
-# uri      = "bolt://localhost:7474" # in Neo4j Desktop
-#                               # custom URL for Sandbox or Aura
-# user     = "neo4j"            # your user name
-#                               # default is always "neo4j"
-#                               # unless you have changed it.
-# password = "neo4j"
-# driver = GraphDatabase.driver(uri=uri,auth=(uri,password))
-# 
-# # G = nx.Graph(driver)   # undirected graph
-# # G = nx.DiGraph(driver) # directed graph
+import nxneo4j as nxn
+from neo4j import GraphDatabase
+
 from urllib.parse import unquote
 
 import matplotlib.pyplot as plt
@@ -277,7 +267,7 @@ def get_classified_links(url,ec):
             links[link] = ec.compare(intro,text_window)
     return links
 
-def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
+def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     ec = EdgeClassifier()
 
     central_nodes = set()
@@ -289,7 +279,7 @@ def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
     print(''.join(['-']*50))
     central_nodes.add(link2id[url])
     print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
-    links = wiki_get_classified_links(url,es)
+    links = wiki_get_classified_links(url,ec)
     print('Num Links:',len(links))
     for l,w in links.items():
         if l not in id2link:
@@ -308,7 +298,7 @@ def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
         print(''.join(['-']*50))
         central_nodes.add(link2id[url])
         print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
-        links = wiki_get_classified_links(url,es)
+        links = wiki_get_classified_links(url,ec)
         print('Num Links:',len(links))
         for l,w in links.items():
             if l not in id2link:
@@ -335,7 +325,7 @@ def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
         for lid in precentral:
             url = id2link[lid]
             central_nodes.add(lid)
-            links = wiki_get_classified_links(url,es)
+            links = wiki_get_classified_links(url,ec)
             for l in links:
                 if l in id2link and url != l:
                     node_counts[link2id[l]] += 1
@@ -345,15 +335,19 @@ def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
     in_edges = set(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
 
     if neo:
-        G = nx.Graph(driver)
+        driver = GraphDatabase.driver(uri="bolt://localhost:7687")
+        G = nxn.Graph(driver)
+        G.delete_all()
     else:
         G = nx.Graph()
 
-    G.add_nodes_from(central_nodes)
-    G.add_edges_from(in_edges)
-    for n in G.nodes:
-        n['name'] = unquote(id2link[n].split('/')[-1])
-
+    # G.add_nodes_from(central_nodes)
+    # G.add_edges_from(in_edges)
+    for nid in central_nodes:
+        name = unquote(id2link[n].split('/')[-1])
+        G.add_node(name,nid=nid)
+    for nid0,nid1,attrs in in_edges.items():
+        G.add_edge(nid0,nid1,**attrs)
     if not neo:
         print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
         nx.draw(G,with_labels=True)
@@ -384,15 +378,7 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/Alex_Jones'
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
     # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
-    # ec = EdgeClassifier()
-    # wiki_get_classified_links('/wiki/Nelly_Martyl',ec)
-    G = generate_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20)
-
-    # from networkx.readwrite import json_graph
-    # import neonx
-    # data1 = json_graph.node_link_data(G)
-    # H = json_graph.node_link_graph(data1)
-    # results = neonx.write_to_neo("http://localhost:7474/db/data/", H, 'LINKS_TO')
+    G = generate_context_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20,neo=True)
 
     # print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # print(get_references(url))
