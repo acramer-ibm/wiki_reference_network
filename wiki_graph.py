@@ -5,6 +5,20 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 
 import networkx as nx
+# # import nxneo4j as nx
+# 
+# from neo4j import GraphDatabase
+# uri      = "bolt://localhost:7474" # in Neo4j Desktop
+#                               # custom URL for Sandbox or Aura
+# user     = "neo4j"            # your user name
+#                               # default is always "neo4j"
+#                               # unless you have changed it.
+# password = "neo4j"
+# driver = GraphDatabase.driver(uri=uri,auth=(uri,password))
+# 
+# # G = nx.Graph(driver)   # undirected graph
+# # G = nx.DiGraph(driver) # directed graph
+
 import matplotlib.pyplot as plt
 
 from random import choice as random_choice, choices as random_choices
@@ -210,7 +224,7 @@ def generate_graph(url,n=5,max_iter=5,max_pc=1000):
 
     print()
     print()
-        
+
     for _ in range(max_iter):
         precentral = list(map(lambda y:y[0],
                        filter(lambda x:x[1]>1 and x[0] not in central_nodes,
@@ -262,10 +276,16 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/Web_scraping'
     # url = 'https://en.wikipedia.org/wiki/Alex_Jones'
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
+    from networkx.readwrite import json_graph
+    import neonx
 
-    print()
     # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
-    print(generate_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20))
+
+    G = generate_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20)
+    # data1 = json_graph.node_link_data(G)
+    # H = json_graph.node_link_graph(data1)
+    # results = neonx.write_to_neo("http://localhost:7474/db/data/", H, 'LINKS_TO')
+
     # print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # print(get_references(url))
     # print(get_window(text_from_html(url),'From'))
