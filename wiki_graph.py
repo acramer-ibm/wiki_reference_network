@@ -231,13 +231,13 @@ def generate_graph(url,n=5,max_iter=5,max_pc=1000):
     plt.show()
     return G
 
-def wiki_get_classified_links(url,ec):
+def wiki_get_classified_links(url,ec,skip=False):
     return get_classified_links('https://en.wikipedia.org'+url,ec)
 
-def get_classified_links(url,ec):
+def get_classified_links(url,ec,skip=False):
     soup = BeautifulSoup(requests.get(url).content, 'html.parser')
 
-    links_and_text = []   
+    links_and_text = []
     for link in soup.find(id='bodyContent').find_all('a'):
         try:
             if link['href'].find('/wiki/') != -1 \
@@ -246,9 +246,14 @@ def get_classified_links(url,ec):
                     and link['href'] not in no_link:
                 children = list(link.children)
                 if len(children) == 1 and isinstance(children[0],str):
-                    links_and_text.append((link['href'],children[0].text))
+                    if skip:
+                        links_and_text.append((link['href'],''))
+                    else:
+                        links_and_text.append((link['href'],children[0].text))
         except:
             pass
+    if skip:
+        return dict(map(lambda x:(x[0],0.5),links_and_text))
     #TODO: ignore 'from wikipedia... this article... for.... refer to...'
     #TODO: ignore contents
     texts = soup.find_all(text=True)
@@ -297,7 +302,7 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
         print(''.join(['-']*50))
         central_nodes.add(link2id[url])
         print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
-        links = wiki_get_classified_links(url,ec)
+        links = wiki_get_classified_links(url,ec,skip=True)
         print('Num Links:',len(links))
         for l,w in links.items():
             if l not in id2link:
@@ -324,14 +329,14 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
         for lid in precentral:
             url = id2link[lid]
             central_nodes.add(lid)
-            links = wiki_get_classified_links(url,ec)
-            for l in links:
+            links = wiki_get_classified_links(url,ec,skip=True)
+            for l,w in links.items():
                 if l in id2link and url != l:
                     node_counts[link2id[l]] += 1
-                    edges.add(frozenset({link2id[url],link2id[l]}))
+                    edges[frozenset({link2id[url],link2id[l]})] = w
             pbar.update(1)
     # in_edges = set(filter(lambda x:not x-central_nodes,edges))
-    in_edges = set(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
+    in_edges = list(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
 
     if neo:
         import nxneo4j as nxn
@@ -347,8 +352,14 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     for nid in central_nodes:
         name = unquote(id2link[n].split('/')[-1])
         G.add_node(name,nid=nid)
-    for nid0,nid1,attrs in in_edges.items():
-        G.add_edge(nid0,nid1,**attrs)
+    for nid0,nid1,attrs in in_edges:
+        try:
+            name0 = unquote(id2link[nid0].split('/')[-1])
+            name1 = unquote(id2link[nid1].split('/')[-1])
+            G.add_edge(nid0,nid1,**attrs)
+        except:
+            print(attrs)
+            exit()
     if not neo:
         print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
         nx.draw(G,with_labels=True)
@@ -379,7 +390,8 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/Alex_Jones'
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
     # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
-    G = generate_context_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20,neo=True)
+    G = generate_context_graph('/wiki/Nelly_Martyl',n=2,max_iter=1,max_pc=1,neo=True)
+    # G = generate_context_graph('/wiki/Nelly_Martyl',n=2,max_iter=1,max_pc=10,neo=True)
 
     # print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # print(get_references(url))
