@@ -4,6 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 
+from edge_classifier import EdgeClassifier
+
 import networkx as nx
 # # import nxneo4j as nx
 # 
@@ -18,6 +20,7 @@ import networkx as nx
 # 
 # # G = nx.Graph(driver)   # undirected graph
 # # G = nx.DiGraph(driver) # directed graph
+from urllib.parse import unquote
 
 import matplotlib.pyplot as plt
 
@@ -26,13 +29,6 @@ from random import choice as random_choice, choices as random_choices
 from tqdm import tqdm
 
 no_link = [
-    #TODO: '/wiki/Doi_(identifier)'
-    #TODO: '/wiki/ISBN_(identifier)'
-    #TODO: '/wiki/SUDOC_(identifier)'
-    #TODO: '/wiki/OCLC_(identifier)'
-    #JSTOR
-    #MBA
-    #Trove
     '/wiki/JSTOR_(identifier)',
     '/wiki/MBA_(identifier)',
     '/wiki/Trove_(identifier)',
@@ -92,18 +88,6 @@ def draw_graph(start_nodes=['/wiki/Alex_Jones','/wiki/James_H._Fetzer']):
     plt.show()
     print('done')
 
-
-# url = 'https://en.wikipedia.org/wiki/Web_scraping'
-# print(get_links(url))
-# print()
-# 
-# url = 'https://en.wikipedia.org/wiki/Southwest_Airlines'
-# print(get_links(url))
-# 
-# print(set(get_links('https://en.wikipedia.org/wiki/Web_scraping')).intersection(
-# set(get_links('https://en.wikipedia.org/wiki/Southwest_Airlines'))
-# ))
-
 def get_references(url):
     soup = BeautifulSoup(requests.get(url).content, 'html.parser')
 
@@ -142,9 +126,13 @@ def get_references(url):
     return wlinks
 
 def tag_visible(element):
-    if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
+    if element.parent.name in ['h1','style', 'script', 'head', 'title', 'meta', '[document]']:
         return False
     if isinstance(element, Comment):
+        return False
+    if element in ['','\n','\t']:
+        return False
+    if len(element.findParents('table')):
         return False
     return True
 
@@ -249,11 +237,130 @@ def generate_graph(url,n=5,max_iter=5,max_pc=1000):
     G = nx.Graph()
     G.add_nodes_from(central_nodes)
     G.add_edges_from(in_edges)
-    print(*list(map(lambda n:'{:04d} - {}'.format(n,id2link[n]),sorted(G.nodes))),sep='\n')
+    print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
     # nx.draw(G,labels=dict(map(lambda x:(x,id2link[x][6:]),central_nodes)),with_labels=True)
     nx.draw(G,with_labels=True)
     plt.show()
     return G
+
+def wiki_get_classified_links(url,ec):
+    return get_classified_links('https://en.wikipedia.org'+url,ec)
+
+def get_classified_links(url,ec):
+    soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+
+    links_and_text = []   
+    for link in soup.find(id='bodyContent').find_all('a'):
+        try:
+            if link['href'].find('/wiki/') != -1 \
+                    and link['href'].find('/wiki/File') == -1 \
+                    and ':' not in link['href'] \
+                    and link['href'] not in no_link:
+                children = list(link.children)
+                if len(children) == 1 and isinstance(children[0],str):
+                    links_and_text.append((link['href'],children[0].text))
+        except:
+            pass
+    #TODO: ignore 'from wikipedia... this article... for.... refer to...'
+    #TODO: ignore contents
+    texts = soup.find_all(text=True)
+    visible_texts = filter(tag_visible, texts)
+    all_text = ' '.join(t.strip() for t in visible_texts if t not in ['','\n','\t'])
+    intro = all_text[:all_text.index('Contents')]
+    intro = '. '.join(list(filter(lambda x:x,intro.split('. ')))[-2:])
+
+    links = dict()
+    for link,text in links_and_text:
+        text_window = get_window(all_text,text,120)
+        text_window = text_window[text_window.index(' ')+1:text_window.rindex(' ')]
+        if text_window != '':
+            links[link] = ec.compare(intro,text_window)
+    return links
+
+def context_generate_graph(url,n=5,max_iter=5,max_pc=1000):
+    ec = EdgeClassifier()
+
+    central_nodes = set()
+    node_counts = [0]
+    edges = dict()
+    link2id = {url:0}
+    id2link = [url]
+
+    print(''.join(['-']*50))
+    central_nodes.add(link2id[url])
+    print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
+    links = wiki_get_classified_links(url,es)
+    print('Num Links:',len(links))
+    for l,w in links.items():
+        if l not in id2link:
+            link2id[l] = len(id2link)
+            id2link.append(l)
+            node_counts.append(0)
+        if url != l:
+            node_counts[link2id[l]] += 1
+            edges[frozenset({link2id[url],link2id[l]})] = w
+
+    new_nodes = list(set(links.keys()).difference(map(lambda x:id2link[x],central_nodes)))
+    print('Num new links:',len(new_nodes))
+    print('Node Counts:',len(node_counts))
+
+    for url in random_choices(new_nodes,k=(n-1)):
+        print(''.join(['-']*50))
+        central_nodes.add(link2id[url])
+        print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
+        links = wiki_get_classified_links(url,es)
+        print('Num Links:',len(links))
+        for l,w in links.items():
+            if l not in id2link:
+                link2id[l] = len(id2link)
+                id2link.append(l)
+                node_counts.append(0)
+            if url != l:
+                node_counts[link2id[l]] += 1
+                edges[frozenset({link2id[url],link2id[l]})] = w
+
+    print()
+    print()
+
+    for _ in range(max_iter):
+        precentral = list(map(lambda y:y[0],
+                       filter(lambda x:x[1]>1 and x[0] not in central_nodes,
+                       enumerate(node_counts))))[:max_pc]
+        print(''.join(['-']*50))
+        print('Precentral:',len(precentral))
+        if not precentral: break
+
+        pbar = tqdm(total=len(precentral))
+
+        for lid in precentral:
+            url = id2link[lid]
+            central_nodes.add(lid)
+            links = wiki_get_classified_links(url,es)
+            for l in links:
+                if l in id2link and url != l:
+                    node_counts[link2id[l]] += 1
+                    edges.add(frozenset({link2id[url],link2id[l]}))
+            pbar.update(1)
+    # in_edges = set(filter(lambda x:not x-central_nodes,edges))
+    in_edges = set(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
+
+    if neo:
+        G = nx.Graph(driver)
+    else:
+        G = nx.Graph()
+
+    G.add_nodes_from(central_nodes)
+    G.add_edges_from(in_edges)
+    for n in G.nodes:
+        n['name'] = unquote(id2link[n].split('/')[-1])
+
+    if not neo:
+        print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
+        nx.draw(G,with_labels=True)
+        plt.show()
+
+    return G
+
 
 def main():
 
@@ -276,12 +383,13 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/Web_scraping'
     # url = 'https://en.wikipedia.org/wiki/Alex_Jones'
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
-    from networkx.readwrite import json_graph
-    import neonx
-
     # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
-
+    # ec = EdgeClassifier()
+    # wiki_get_classified_links('/wiki/Nelly_Martyl',ec)
     G = generate_graph('/wiki/Nelly_Martyl',max_iter=3,max_pc=20)
+
+    # from networkx.readwrite import json_graph
+    # import neonx
     # data1 = json_graph.node_link_data(G)
     # H = json_graph.node_link_graph(data1)
     # results = neonx.write_to_neo("http://localhost:7474/db/data/", H, 'LINKS_TO')
