@@ -7,8 +7,6 @@ from bs4.element import Comment
 from edge_classifier import EdgeClassifier
 
 import networkx as nx
-import nxneo4j as nxn
-from neo4j import GraphDatabase
 
 from urllib.parse import unquote
 
@@ -262,6 +260,7 @@ def get_classified_links(url,ec):
     links = dict()
     for link,text in links_and_text:
         text_window = get_window(all_text,text,120)
+        if ' ' not in text_window: continue
         text_window = text_window[text_window.index(' ')+1:text_window.rindex(' ')]
         if text_window != '':
             links[link] = ec.compare(intro,text_window)
@@ -335,6 +334,8 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     in_edges = set(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
 
     if neo:
+        import nxneo4j as nxn
+        from neo4j import GraphDatabase
         driver = GraphDatabase.driver(uri="bolt://localhost:7687")
         G = nxn.Graph(driver)
         G.delete_all()
