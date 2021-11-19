@@ -231,6 +231,7 @@ def generate_graph(url,n=5,max_iter=5,max_pc=1000):
     plt.show()
     return G
 
+
 def wiki_get_classified_links(url,ec,skip=False):
     return get_classified_links('https://en.wikipedia.org'+url,ec,skip)
 
@@ -271,6 +272,49 @@ def get_classified_links(url,ec,skip=False):
             links[link] = float(ec.compare(intro,text_window))
     return links
 
+
+def wiki_get_links_and_text(url,*args,**kwargs):
+    return get_links_and_text('https://en.wikipedia.org'+url)
+
+def get_links_and_text(url):
+    soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+
+    links = dict()
+    for link in soup.find(id='bodyContent').find_all('a'):
+        try:
+            if link['href'].find('/wiki/') != -1 \
+                    and link['href'].find('/wiki/File') == -1 \
+                    and ':' not in link['href'] \
+                    and link['href'] not in no_link:
+                children = list(link.children)
+                if len(children) == 1 and isinstance(children[0],str):
+                    links[link['href']] = children[0].text
+        except:
+            pass
+
+    return links
+
+def wiki_get_edge_weight(url,text,ec=None):
+    return get_edge_weight('https://en.wikipedia.org'+url,text,ec)
+
+def get_edge_weight(url,text,ec=None):
+    # if ec is None:
+    #     ec = EdgeClassifier()
+    soup = BeautifulSoup(requests.get(url).content, 'html.parser')
+
+    texts = soup.find_all(text=True)
+    visible_texts = filter(tag_visible, texts)
+    all_text = ' '.join(t.strip() for t in visible_texts if t not in ['','\n','\t'])
+    intro = all_text[:all_text.index('Contents')]
+    intro = '. '.join(list(filter(lambda x:x,intro.split('. ')))[-2:])
+
+    text_window = get_window(all_text,text,120)
+    if ' ' in text_window:
+        text_window = text_window[text_window.index(' ')+1:text_window.rindex(' ')]
+        if text_window != '':
+            return float(ec.compare(intro,text_window))
+    return -1
+
 def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     ec = EdgeClassifier()
 
@@ -283,16 +327,16 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     print(''.join(['-']*50))
     central_nodes.add(link2id[url])
     print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
-    links = wiki_get_classified_links(url,ec)
+    links = wiki_get_links_and_text(url,ec)
     print('Num Links:',len(links))
-    for l,w in links.items():
+    for l,t in links.items():
         if l not in id2link:
             link2id[l] = len(id2link)
             id2link.append(l)
             node_counts.append(0)
         if url != l:
             node_counts[link2id[l]] += 1
-            edges[frozenset({link2id[url],link2id[l]})] = w
+            edges[frozenset({link2id[url],link2id[l]})] = (url,t)
 
     new_nodes = list(set(links.keys()).difference(map(lambda x:id2link[x],central_nodes)))
     print('Num new links:',len(new_nodes))
@@ -302,20 +346,18 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
         print(''.join(['-']*50))
         central_nodes.add(link2id[url])
         print('Central Nodes:',*list(map(lambda x:id2link[x][6:],central_nodes)))
-        links = wiki_get_classified_links(url,ec,skip=True)
+        links = wiki_get_links_and_text(url,ec,skip=True)
         print('Num Links:',len(links))
-        for l,w in links.items():
+        for l,t in links.items():
             if l not in id2link:
                 link2id[l] = len(id2link)
                 id2link.append(l)
                 node_counts.append(0)
             if url != l:
                 node_counts[link2id[l]] += 1
-                edges[frozenset({link2id[url],link2id[l]})] = w
+                edges[frozenset({link2id[url],link2id[l]})] = (url,t)
 
-    print()
-    print()
-
+    print('\n')
     for _ in range(max_iter):
         precentral = list(map(lambda y:y[0],
                        filter(lambda x:x[1]>1 and x[0] not in central_nodes,
@@ -329,14 +371,20 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
         for lid in precentral:
             url = id2link[lid]
             central_nodes.add(lid)
-            links = wiki_get_classified_links(url,ec,skip=True)
-            for l,w in links.items():
+            links = wiki_get_links_and_text(url,ec,skip=True)
+            for l,t in links.items():
                 if l in id2link and url != l:
                     node_counts[link2id[l]] += 1
-                    edges[frozenset({link2id[url],link2id[l]})] = w
+                    edges[frozenset({link2id[url],link2id[l]})] = (url,t)
             pbar.update(1)
-    # in_edges = set(filter(lambda x:not x-central_nodes,edges))
-    in_edges = list(filter(lambda x:not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':y[1]}]),edges.items())))
+
+    # # in_edges = list(filter(lambda x:x[2]['weight'] >= 0 and not {x[0],x[1]}-central_nodes,map(lambda y:tuple(list(y[0])+[{'weight':wiki_get_edge_weight(*y[1],ec=ec)}]),edges.items())))
+    # in_edges = []
+    # for (a,b),(u,t) in edges.items():
+    #     if {a,b}-central_nodes:
+    #         w = wiki_get_edge_weight(u,t,ec)
+    #         if w >= 0:
+    #             in_edges.append((a,b,{'weight':w}))
 
     if neo:
         import nxneo4j as nxn
@@ -347,17 +395,28 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
     else:
         G = nx.Graph()
 
-    # G.add_nodes_from(central_nodes)
-    # G.add_edges_from(in_edges)
+    print(''.join(['-']*50))
+    print('Creating Graph:',len(central_nodes)+len(edges))
+    pbar = tqdm(total=len(central_nodes)+len(edges))
+
     for nid in central_nodes:
         name = unquote(id2link[n].split('/')[-1])
         G.add_node(name,nid=nid)
-    for nid0,nid1,attrs in in_edges:
-        name0 = unquote(id2link[nid0].split('/')[-1])
-        name1 = unquote(id2link[nid1].split('/')[-1])
-        G.add_edge(name0,name1,**attrs)
+        pbar.update(1)
+    for (a,b),(u,t) in list(edges.items())[:10]:
+        if {a,b}-central_nodes:
+            w = wiki_get_edge_weight(u,t,ec)
+            if w >= 0:
+                name0 = unquote(id2link[a].split('/')[-1])
+                name1 = unquote(id2link[b].split('/')[-1])
+                G.add_edge(name0,name1,weight=w)
+        pbar.update(1)
+    # for nid0,nid1,attrs in in_edges:
+    #     name0 = unquote(id2link[nid0].split('/')[-1])
+    #     name1 = unquote(id2link[nid1].split('/')[-1])
+    #     G.add_edge(name0,name1,**attrs)
     if not neo:
-        print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
+        # print(*list(map(lambda n:'{:04d} - {}'.format(n,unquote(id2link[n].split('/')[-1])),sorted(G.nodes))),sep='\n')
         nx.draw(G,with_labels=True)
         plt.show()
 
