@@ -403,7 +403,7 @@ def generate_context_graph(url,n=5,max_iter=5,max_pc=1000,neo=False):
         name = unquote(id2link[n].split('/')[-1])
         G.add_node(name,nid=nid)
         pbar.update(1)
-    for (a,b),(u,t) in list(edges.items())[:10]:
+    for (a,b),(u,t) in list(edges.items()):
         if {a,b}-central_nodes:
             w = wiki_get_edge_weight(u,t,ec)
             if w >= 0:
@@ -446,7 +446,8 @@ def main():
     # url = 'https://en.wikipedia.org/wiki/James_H._Fetzer'
     # print(generate_graph('/wiki/Alex_Jones',max_iter=1,max_pc=10))
     # G = generate_context_graph('/wiki/Nelly_Martyl',n=2,max_iter=1,max_pc=1,neo=True)
-    G = generate_context_graph('/wiki/Nelly_Martyl',n=5,max_iter=5,max_pc=20,neo=True)
+    # G = generate_context_graph('/wiki/Nelly_Martyl',n=5,max_iter=2,max_pc=15,neo=True)
+    G = generate_context_graph('/wiki/Alex_Jones',n=5,max_iter=2,max_pc=5,neo=True)
 
     # print(get_window(text_from_html(url),'Sandy Hook Elementary School shooting',300))
     # print(get_references(url))
